@@ -1,0 +1,162 @@
+-- Reports for managers/admins, and the CSV import of existing clients (admin).
+-- Additive only: new functions, no changes to existing tables or data.
+
+---------------------------------------------------------------------------
+-- Reports: one call returns every section of the Reports screen.
+---------------------------------------------------------------------------
+create function public.get_reports() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_today date := public.ist_today();
+  v_week_end date := v_today + (7 - extract(isodow from v_today)::int);
+  result jsonb;
+begin
+  if not private.is_manager_or_admin() then
+    raise exception 'Reports are for managers and admins' using errcode = '42501';
+  end if;
+
+  select jsonb_build_object(
+    'generated_at', now(),
+    'clients', (
+      select jsonb_build_object(
+        'active', count(*) filter (where lifecycle in ('onboarding', 'active', 'launched')),
+        'onboarding', count(*) filter (where lifecycle = 'onboarding'),
+        'in_launch', count(*) filter (where lifecycle = 'active'),
+        'launched', count(*) filter (where lifecycle = 'launched'),
+        'paused', count(*) filter (where lifecycle = 'paused'),
+        'completed', count(*) filter (where lifecycle = 'completed'),
+        'launching_this_week', count(*) filter (where lifecycle in ('onboarding', 'active')
+                                                  and launch_date between v_today and v_week_end))
+      from public.clients),
+    -- Launched clients: on time = launched with no slip. In progress: currently delayed or not.
+    'launches', (
+      select jsonb_build_object(
+        'launched_on_time', count(*) filter (where lifecycle in ('launched', 'completed') and delay_days <= 0),
+        'launched_late', count(*) filter (where lifecycle in ('launched', 'completed') and delay_days > 0),
+        'in_progress_on_track', count(*) filter (where lifecycle in ('onboarding', 'active') and delay_days <= 0),
+        'in_progress_delayed', count(*) filter (where lifecycle in ('onboarding', 'active') and delay_days > 0),
+        'avg_delay_days', coalesce(round(avg(delay_days) filter (where delay_days > 0), 1), 0))
+      from public.clients),
+    -- Working days each launch stage actually took vs planned, over finished stages.
+    'stages', coalesce((
+      select jsonb_agg(row_to_json(x) order by x.position)
+      from (
+        select s.position, min(s.name) as name,
+               count(*) filter (where s.status = 'done') as finished,
+               round(avg(public.working_days_between(s.start_date - 1, (s.completed_at at time zone 'Asia/Kolkata')::date))
+                     filter (where s.status = 'done' and s.completed_at is not null), 1) as avg_actual_days,
+               round(avg(public.working_days_between(s.start_date - 1, s.original_due_date)), 1) as avg_planned_days
+        from public.client_stages s
+        where not s.is_post_launch and s.start_date is not null
+        group by s.position
+      ) x), '[]'::jsonb),
+    -- Open work per active person.
+    'workload', coalesce((
+      select jsonb_agg(row_to_json(w) order by w.overdue desc, w.open desc, w.name)
+      from (
+        select p.id, coalesce(nullif(p.full_name, ''), p.email) as name, p.role, p.reports_to,
+               count(t.id) filter (where t.status <> 'done') as open,
+               count(t.id) filter (where t.status not in ('done', 'waiting_on_client') and t.due_date < v_today) as overdue,
+               count(t.id) filter (where t.status not in ('done') and t.due_date between v_today and v_week_end) as due_this_week,
+               count(t.id) filter (where t.status = 'in_review') as in_review,
+               count(t.id) filter (where t.status = 'waiting_on_client') as waiting,
+               count(t.id) filter (where t.status = 'done'
+                                     and (t.completed_at at time zone 'Asia/Kolkata')::date > v_today - 30) as done_30d
+        from public.profiles p
+        left join public.tasks t on t.assignee_id = p.id
+        where p.is_active
+        group by p.id
+      ) w), '[]'::jsonb),
+    -- Working days lost waiting on each client (closed waits + the ones still open).
+    'waiting', coalesce((
+      select jsonb_agg(row_to_json(c) order by c.days desc)
+      from (
+        select cl.id, cl.name,
+               sum(t.client_wait_days)
+                 + coalesce(sum(public.working_days_between((t.waiting_since at time zone 'Asia/Kolkata')::date, v_today))
+                              filter (where t.status = 'waiting_on_client'), 0) as days,
+               count(*) filter (where t.status = 'waiting_on_client') as waiting_now
+        from public.clients cl
+        join public.tasks t on t.client_id = cl.id
+        group by cl.id
+        having sum(t.client_wait_days) > 0 or bool_or(t.status = 'waiting_on_client')
+      ) c), '[]'::jsonb)
+  ) into result;
+  return result;
+end $$;
+
+revoke execute on function public.get_reports() from public, anon;
+grant execute on function public.get_reports() to authenticated;
+
+---------------------------------------------------------------------------
+-- CSV import of a client already in progress (admin). Creates the client from the template
+-- exactly like Add Client, then:
+--   * marks every non-recurring task in p_done_positions Done (no schedule shift),
+--   * optionally sets planned due dates per stage from the sheet: {"5": "2026-12-01", ...}.
+---------------------------------------------------------------------------
+create function public.import_client(
+  p_name text,
+  p_template_id uuid,
+  p_onboarding_date date,
+  p_manager_id uuid default null,
+  p_done_positions int[] default '{}',
+  p_stage_dates jsonb default '{}'
+) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_client uuid;
+  k text;
+  v_date date;
+  v_launch date;
+begin
+  if not private.is_admin() then
+    raise exception 'Only admins can import clients' using errcode = '42501';
+  end if;
+  if exists (select 1 from public.clients where lower(name) = lower(trim(p_name))) then
+    raise exception 'A client named "%" already exists', trim(p_name);
+  end if;
+
+  v_client := public.create_client_from_template(p_name, p_template_id, p_onboarding_date, p_manager_id);
+
+  -- Planned dates from the sheet for stages that are not finished.
+  for k, v_date in
+    select e.key, (e.value #>> '{}')::date from jsonb_each(coalesce(p_stage_dates, '{}')) e
+  loop
+    if k !~ '^\d+$' then
+      continue;
+    end if;
+    update public.client_stages
+    set due_date = v_date, original_due_date = v_date,
+        start_date = least(start_date, v_date)
+    where client_id = v_client and position = k::int and not (position = any (coalesce(p_done_positions, '{}')));
+    update public.tasks t
+    set due_date = v_date, original_due_date = v_date
+    from public.client_stages s
+    where t.client_stage_id = s.id and s.client_id = v_client and s.position = k::int
+      and not t.is_recurring and not (s.position = any (coalesce(p_done_positions, '{}')));
+  end loop;
+
+  -- Finished stages: their tasks are Done as of the stage's planned date; nothing shifts.
+  perform set_config('app.skip_shift', 'on', true);
+  perform set_config('app.bulk_create', 'on', true);
+  update public.tasks t
+  set status = 'done',
+      completed_at = coalesce((s.due_date + time '18:00') at time zone 'Asia/Kolkata', now())
+  from public.client_stages s
+  where t.client_stage_id = s.id and s.client_id = v_client
+    and s.position = any (coalesce(p_done_positions, '{}')) and not t.is_recurring;
+  perform set_config('app.skip_shift', 'off', true);
+  perform set_config('app.bulk_create', 'off', true);
+
+  select s.due_date into v_launch from public.client_stages s
+  where s.client_id = v_client and not s.is_post_launch
+  order by s.position desc limit 1;
+  update public.clients
+  set launch_date = v_launch, original_launch_date = v_launch, delay_days = 0
+  where id = v_client;
+
+  return v_client;
+end $$;
+
+revoke execute on function public.import_client(text, uuid, date, uuid, int[], jsonb) from public, anon;
+grant execute on function public.import_client(text, uuid, date, uuid, int[], jsonb) to authenticated;

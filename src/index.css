@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-graphite-800;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-ink text-white font-sans antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior-y: none;
+  }
+
+  h1, h2, h3 {
+    @apply font-serif;
+    line-height: 1.2;
+  }
+
+  ::selection {
+    @apply bg-crimson-600/30 text-white;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-crimson-500 ring-offset-2 ring-offset-ink;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-1.5 h-1.5;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-graphite-600 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-graphite-500;
+  }
+}
+
+@layer components {
+  .skeleton {
+    @apply relative overflow-hidden bg-graphite-800 rounded-lg;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.04),
+      transparent
+    );
+    animation: shimmer 1.5s infinite;
+  }
+
+  .glass {
+    @apply bg-ink-100/80 backdrop-blur-md border border-graphite-800;
+  }
+
+  .crimson-glow {
+    box-shadow: 0 0 24px -4px rgba(217, 4, 41, 0.25);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
