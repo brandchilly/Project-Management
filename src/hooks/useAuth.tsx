@@ -50,7 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const p = await fetchProfile(next.user.id);
       if (!p || !p.is_active) {
         setAccessError(
-          p ? 'This account has been deactivated. Contact your admin.' : 'No profile found for this account.'
+          p
+            ? 'This account is not active. Ask your admin to activate it in Admin › Users.'
+            : 'No profile found for this account. Ask your admin to set it up.'
         );
         setProfile(null);
         setSession(null);

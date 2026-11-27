@@ -7,6 +7,7 @@ import {
   Shield,
   UsersRound,
   CircleUser,
+  MessagesSquare,
 } from 'lucide-react';
 import type { NavItem, UserRole } from '@/lib/constants';
 
@@ -36,6 +37,12 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ['admin', 'manager', 'member'],
   },
   {
+    label: 'Chat',
+    to: '/chat',
+    icon: MessagesSquare,
+    roles: ['admin', 'manager', 'member'],
+  },
+  {
     label: 'Alerts',
     to: '/notifications',
     icon: Bell,
@@ -58,7 +65,7 @@ export const NAV_ITEMS: NavItem[] = [
 
 // Phones: the main screens plus "Me" (Account), which also links to Admin for admins.
 export const MOBILE_NAV_ITEMS: NavItem[] = [
-  ...NAV_ITEMS.filter((item) => ['My Tasks', 'Board', 'Clients', 'Alerts'].includes(item.label)),
+  ...NAV_ITEMS.filter((item) => ['My Tasks', 'Board', 'Clients', 'Chat', 'Alerts'].includes(item.label)),
   { label: 'Me', to: '/account', icon: CircleUser, roles: ['admin', 'manager', 'member'] },
 ];
 

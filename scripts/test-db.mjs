@@ -274,7 +274,9 @@ await test('accounts not created by the admin start inactive and can read nothin
     profiles: (await q(`select id from profiles`)).length,
     departments: (await q(`select id from departments`)).length,
   }));
-  assert.deepEqual(r, { profiles: 0, departments: 0 });
+  assert.deepEqual(r, { profiles: 1, departments: 0 }, 'only their own profile row (so login can say "not active")');
+  const own = await as(U.sneaky, () => q(`select id, is_active from profiles`));
+  assert.deepEqual(own, [{ id: U.sneaky, is_active: false }]);
   const admin = await one(`select is_active from profiles where id = $1`, [U.admin]);
   assert.equal(admin.is_active, true, 'admin-created accounts (app_metadata.role set) are active');
 });
@@ -598,6 +600,212 @@ await test('get_reports: managers get every section; members are refused', async
   assert.ok(r.workload.some((w) => w.id === U.am && w.open > 0));
   assert.ok(r.waiting.some((w) => w.days >= 3), 'closed waits are counted');
   await rejects(as(U.copy, () => q(`select get_reports()`)), /managers and admins/);
+});
+
+await test('priority: defaults to normal; managers set it; members cannot change it', async () => {
+  const r = await one(`select count(*)::int n from tasks where priority <> 'normal'`);
+  assert.equal(r.n, 0, 'existing tasks are normal');
+  const t = await as(U.mgr1, () =>
+    one(`select * from create_custom_task('Urgent fix', $1, null, null, $2, ist_today() + 1, null, false, false, true, '{}', 'urgent')`,
+      [clientA, U.copy]));
+  assert.equal(t.priority, 'urgent');
+  const old = await as(U.mgr1, () => one(`select * from create_custom_task('Old-style call', $1)`, [clientA]));
+  assert.equal(old.priority, 'normal', 'callers that do not send p_priority still work');
+  await rejects(as(U.copy, () => q(`update tasks set priority = 'low' where id = $1`, [t.id])), /title, description and link/);
+  await as(U.mgr1, () => q(`update tasks set priority = 'high' where id = $1`, [t.id]));
+  assert.equal((await one(`select priority from tasks where id = $1`, [t.id])).priority, 'high');
+});
+
+await test('chat: every department has its channel, including new ones', async () => {
+  const r = await one(`select count(*)::int n from departments d
+    where not exists (select 1 from chat_conversations c where c.department_id = d.id and c.kind = 'department')`);
+  assert.equal(r.n, 0);
+  const id = (await as(U.admin, () => one(`insert into departments (name, position) values ('Chat Test Dept', 99) returning id`))).id;
+  assert.ok(await one(`select 1 from chat_conversations where department_id = $1`, [id]));
+  await as(U.admin, () => q(`delete from departments where id = $1`, [id]));
+  assert.equal((await q(`select 1 from chat_conversations where department_id = $1`, [id])).length, 0);
+});
+
+let dm;
+await test('chat: direct messages are private to the two people and de-duplicated', async () => {
+  dm = (await as(U.copy, () => one(`select start_direct_chat($1) id`, [U.editor]))).id;
+  const again = (await as(U.editor, () => one(`select start_direct_chat($1) id`, [U.copy]))).id;
+  assert.equal(again, dm);
+  await rejects(as(U.copy, () => q(`select start_direct_chat($1)`, [U.copy])), /someone else/);
+  await as(U.copy, () => q(`insert into chat_messages (conversation_id, body) values ($1, 'Hi Rahul')`, [dm]));
+  assert.equal((await as(U.editor, () => q(`select id from chat_messages where conversation_id = $1`, [dm]))).length, 1);
+  for (const uid of [U.outsider, U.admin, U.mgr1]) {
+    assert.equal((await as(uid, () => q(`select id from chat_messages where conversation_id = $1`, [dm]))).length, 0);
+    assert.equal((await as(uid, () => q(`select id from chat_conversations where id = $1`, [dm]))).length, 0);
+  }
+  await rejects(as(U.outsider, () => q(`insert into chat_messages (conversation_id, body) values ($1, 'sneak')`, [dm])), /row-level security/);
+  await rejects(as(U.copy, () => q(`insert into chat_messages (conversation_id, author_id, body) values ($1, $2, 'forged')`, [dm, U.editor])), /row-level security/);
+});
+
+await test('chat: unread counts, mark read, edit own text only, delete own only', async () => {
+  const inbox = await as(U.editor, () => one(`select * from chat_inbox() where id = $1`, [dm]));
+  assert.equal(inbox.unread, 1);
+  assert.equal(inbox.other_user_id, U.copy);
+  assert.equal(inbox.last_body, 'Hi Rahul');
+  assert.equal((await as(U.copy, () => one(`select unread from chat_inbox() where id = $1`, [dm]))).unread, 0, 'own messages are read');
+  await as(U.editor, () => q(`select mark_chat_read($1)`, [dm]));
+  assert.equal((await as(U.editor, () => one(`select unread from chat_inbox() where id = $1`, [dm]))).unread, 0);
+
+  const msg = (await one(`select id from chat_messages where conversation_id = $1`, [dm])).id;
+  const edited = await as(U.copy, () => one(`update chat_messages set body = 'Hi Rahul!' where id = $1 returning edited_at`, [msg]));
+  assert.ok(edited.edited_at);
+  await rejects(as(U.copy, () => q(`update chat_messages set created_at = now() - interval '1 day' where id = $1`, [msg])), /Only the text/);
+  assert.equal((await as(U.editor, () => q(`update chat_messages set body = 'x' where id = $1 returning id`, [msg]))).length, 0);
+  assert.equal((await as(U.editor, () => q(`delete from chat_messages where id = $1 returning id`, [msg]))).length, 0);
+  assert.equal((await as(U.copy, () => q(`delete from chat_messages where id = $1 returning id`, [msg]))).length, 1);
+});
+
+await test('chat: department channel open to its members, managers and admins only', async () => {
+  const ch = (await one(`select id from chat_conversations where department_id = $1`, [editorDept])).id;
+  await as(U.editor, () => q(`insert into chat_messages (conversation_id, body) values ($1, 'Edits are up')`, [ch]));
+  for (const uid of [U.editor, U.mgr2, U.admin]) {
+    assert.equal((await as(uid, () => q(`select id from chat_messages where conversation_id = $1`, [ch]))).length, 1, uid);
+  }
+  assert.equal((await as(U.copy, () => q(`select id from chat_messages where conversation_id = $1`, [ch]))).length, 0);
+  assert.equal((await as(U.copy, () => q(`select id from chat_inbox() where id = $1`, [ch]))).length, 0);
+  await rejects(as(U.copy, () => q(`insert into chat_messages (conversation_id, body) values ($1, 'hi')`, [ch])), /row-level security/);
+});
+
+await test('chat: groups are managed by their creator; others can only leave', async () => {
+  const g = (await as(U.mgr1, () => one(`select create_group_chat('Bulls Edge launch', $1) id`, [[U.copy, U.editor]]))).id;
+  assert.equal((await as(U.outsider, () => q(`select id from chat_conversations where id = $1`, [g]))).length, 0);
+  assert.equal((await as(U.copy, () => one(`select member_count from chat_inbox() where id = $1`, [g]))).member_count, 3);
+  await rejects(as(U.copy, () => q(`select update_group_chat($1, 'Renamed')`, [g])), /creator or an admin/);
+  await as(U.mgr1, () => q(`select update_group_chat($1, 'Bulls Edge war room', $2, $3)`, [g, [U.am], [U.editor]]));
+  assert.equal((await as(U.editor, () => q(`select id from chat_conversations where id = $1`, [g]))).length, 0);
+  assert.equal((await as(U.am, () => one(`select title from chat_inbox() where id = $1`, [g]))).title, 'Bulls Edge war room');
+  await as(U.copy, () => q(`select leave_chat($1)`, [g]));
+  assert.equal((await as(U.copy, () => q(`select id from chat_conversations where id = $1`, [g]))).length, 0);
+  await rejects(as(U.editor, () => q(`select leave_chat($1)`, [dm])), /Only group chats/);
+  await rejects(as(U.mgr1, () => q(`select create_group_chat('Solo', '{}')`)), /at least one other/);
+});
+
+await test('chat: @mentions notify only people who can open the conversation', async () => {
+  await as(U.copy, () => q(`insert into chat_messages (conversation_id, body, mentions) values ($1, '@Rahul @Omar check', $2)`,
+    [dm, [U.editor, U.outsider]]));
+  assert.ok(await one(`select 1 from notifications where user_id = $1 and type = 'chat_mention' and link = $2`, [U.editor, `/chat/${dm}`]));
+  assert.equal((await q(`select 1 from notifications where user_id = $1 and type = 'chat_mention'`, [U.outsider])).length, 0);
+});
+
+await test('chat: inactive accounts cannot use chat', async () => {
+  await rejects(as(U.sneaky, () => q(`select start_direct_chat($1)`, [U.copy])), /not active/);
+  assert.equal((await as(U.sneaky, () => q(`select id from chat_inbox()`))).length, 0);
+});
+
+let topMsg;
+await test('chat v2: threads keep reply counts; replies must stay in the conversation', async () => {
+  topMsg = (await as(U.copy, () => one(`insert into chat_messages (conversation_id, body) values ($1, 'Thread start') returning id`, [dm]))).id;
+  const reply = (await as(U.editor, () =>
+    one(`insert into chat_messages (conversation_id, body, parent_id) values ($1, 'A reply', $2) returning id`, [dm, topMsg]))).id;
+  let p = await one(`select reply_count, last_reply_at from chat_messages where id = $1`, [topMsg]);
+  assert.equal(p.reply_count, 1);
+  assert.ok(p.last_reply_at);
+  await rejects(as(U.editor, () => q(`insert into chat_messages (conversation_id, body, parent_id) values ($1, 'nested', $2)`, [dm, reply])),
+    /same conversation/);
+  const ch = (await one(`select id from chat_conversations where department_id = $1`, [editorDept])).id;
+  await rejects(as(U.editor, () => q(`insert into chat_messages (conversation_id, body, parent_id) values ($1, 'cross', $2)`, [ch, topMsg])),
+    /same conversation/);
+  await as(U.editor, () => q(`delete from chat_messages where id = $1`, [reply]));
+  p = await one(`select reply_count from chat_messages where id = $1`, [topMsg]);
+  assert.equal(p.reply_count, 0);
+  await rejects(as(U.copy, () => q(`update chat_messages set reply_count = 99 where id = $1`, [topMsg])), /Only the text/);
+});
+
+await test('chat v2: attachments must live in the conversation folder; file-only messages allowed', async () => {
+  const ok = [{ path: `chat/${dm}/abc-photo.webp`, name: 'photo.webp', size: 1200, type: 'image/webp' }];
+  await as(U.copy, () => q(`insert into chat_messages (conversation_id, body, attachments) values ($1, '', $2)`, [dm, JSON.stringify(ok)]));
+  const other = [{ path: `client/${clientA}/thread/x.pdf`, name: 'x.pdf' }];
+  await rejects(as(U.copy, () => q(`insert into chat_messages (conversation_id, body, attachments) values ($1, 'see', $2)`, [dm, JSON.stringify(other)])),
+    /Invalid attachment/);
+  await rejects(as(U.copy, () => q(`insert into chat_messages (conversation_id, body) values ($1, '  ')`, [dm])), /chat_messages_content/);
+  assert.equal((await as(U.editor, () => one(`select private.can_access_storage_path($1) ok`, [`chat/${dm}/abc-photo.webp`]))).ok, true);
+  assert.equal((await as(U.outsider, () => one(`select private.can_access_storage_path($1) ok`, [`chat/${dm}/abc-photo.webp`]))).ok, false);
+  assert.equal((await as(U.copy, () => one(`select private.can_access_storage_path($1) ok`, [`client/${clientA}/thread/a.pdf`]))).ok, true,
+    'existing client paths unchanged');
+});
+
+await test('chat v2: search finds only messages the person can read', async () => {
+  await as(U.copy, () => q(`insert into chat_messages (conversation_id, body) values ($1, 'The landing page headline is ready')`, [dm]));
+  const mine = await as(U.editor, () => q(`select id from chat_messages where search @@ websearch_to_tsquery('simple', 'headline')`));
+  assert.equal(mine.length, 1);
+  const outsider = await as(U.outsider, () => q(`select id from chat_messages where search @@ websearch_to_tsquery('simple', 'headline')`));
+  assert.equal(outsider.length, 0);
+});
+
+await test('chat v2: reactions follow conversation access; only your own can be removed', async () => {
+  await as(U.editor, () => q(`insert into chat_reactions (message_id, emoji, conversation_id) values ($1, '👍', $2)`, [topMsg, dm]));
+  const r = await one(`select conversation_id from chat_reactions where message_id = $1`, [topMsg]);
+  assert.equal(r.conversation_id, dm);
+  assert.equal((await as(U.copy, () => q(`select 1 from chat_reactions where message_id = $1`, [topMsg]))).length, 1);
+  assert.equal((await as(U.outsider, () => q(`select 1 from chat_reactions where message_id = $1`, [topMsg]))).length, 0);
+  await rejects(as(U.outsider, () => q(`insert into chat_reactions (message_id, emoji, conversation_id) values ($1, '👍', $2)`, [topMsg, dm])),
+    /row-level security/);
+  assert.equal((await as(U.copy, () => q(`delete from chat_reactions where message_id = $1 returning 1`, [topMsg]))).length, 0);
+  assert.equal((await as(U.editor, () => q(`delete from chat_reactions where message_id = $1 returning 1`, [topMsg]))).length, 1);
+});
+
+await test('chat v2: presence and typing topics are limited to people who can open the chat', async () => {
+  const typing = `pms-typing:${dm}`;
+  assert.equal((await as(U.editor, () => one(`select private.can_use_realtime_topic('pms-online') ok`))).ok, true);
+  assert.equal((await as(U.editor, () => one(`select private.can_use_realtime_topic($1) ok`, [typing]))).ok, true);
+  assert.equal((await as(U.outsider, () => one(`select private.can_use_realtime_topic($1) ok`, [typing]))).ok, false);
+  assert.equal((await as(U.outsider, () => one(`select private.can_use_realtime_topic('pms-typing:not-a-uuid') ok`))).ok, false);
+  assert.equal((await as(U.sneaky, () => one(`select private.can_use_realtime_topic('pms-online') ok`))).ok, false);
+  assert.ok(await one(`select 1 from pg_policies where schemaname = 'realtime' and tablename = 'messages'`));
+});
+
+await test('chat v2: retention purges old chat, read notifications and empty groups; keeps recent', async () => {
+  const old = (await as(U.copy, () => one(`insert into chat_messages (conversation_id, body) values ($1, 'ancient') returning id`, [dm]))).id;
+  await q(`update chat_messages set created_at = now() - interval '7 months' where id = $1`, [old]);
+  const keep = (await as(U.copy, () => one(`insert into chat_messages (conversation_id, body) values ($1, 'recent') returning id`, [dm]))).id;
+  const g = (await as(U.mgr1, () => one(`select create_group_chat('Empty soon', $1) id`, [[U.copy]]))).id;
+  await q(`delete from chat_participants where conversation_id = $1`, [g]);
+  const r = (await one(`select private.purge_old_data() r`)).r;
+  assert.ok(r.chat_messages >= 1);
+  assert.equal(r.empty_groups, 1);
+  assert.equal((await q(`select 1 from chat_messages where id = $1`, [old])).length, 0);
+  assert.equal((await q(`select 1 from chat_messages where id = $1`, [keep])).length, 1);
+  await rejects(as(U.admin, () => q(`select private.purge_old_data()`)), /permission denied/);
+});
+
+await test('chat v2: usage and file clean-up are admin-only; keep_alive is public and harmless', async () => {
+  const u = (await as(U.admin, () => one(`select admin_usage() u`))).u;
+  assert.ok(u.db_bytes > 0);
+  assert.equal(u.retention.chat_months, 6);
+  await rejects(as(U.mgr1, () => q(`select admin_usage()`)), /Only admins/);
+  await rejects(as(U.copy, () => q(`select * from chat_files_to_purge()`)), /Only admins/);
+  await q(`insert into storage.objects (bucket_id, name, owner, metadata, created_at)
+           values ('files', $1, $2, '{"size": 5000}', now() - interval '2 days')`, [`chat/${dm}/orphan.pdf`, U.copy]);
+  const files = await as(U.admin, () => q(`select * from chat_files_to_purge()`));
+  assert.ok(files.some((f) => f.name === `chat/${dm}/orphan.pdf`));
+  assert.ok(!files.some((f) => f.name === `chat/${dm}/abc-photo.webp`), 'files still used by a message are kept');
+  await db.exec(`set role anon`);
+  try {
+    assert.match((await one(`select keep_alive() k`)).k, /^ok:/);
+  } finally {
+    await db.exec(`reset role`);
+  }
+});
+
+await test('stage dates: client manager re-plans a stage; tasks follow; launch date and delay update', async () => {
+  const st8 = await one(`select id, due_date::text d from client_stages where client_id = $1 and position = 8`, [clientA]);
+  const before = await one(`select launch_date::text l, original_launch_date::text o from clients where id = $1`, [clientA]);
+  const later = (await one(`select add_working_days($1::date, 3)::text d`, [st8.d])).d;
+  await rejects(as(U.mgr2, () => q(`select set_stage_dates($1, $2::date, $3::date)`, [st8.id, st8.d, later])), /manager or an admin/);
+  await rejects(as(U.mgr1, () => q(`select set_stage_dates($1, $2::date, $3::date)`, [st8.id, later, st8.d])), /cannot be before/);
+  await as(U.mgr1, () => q(`select set_stage_dates($1, $2::date, $3::date)`, [st8.id, st8.d, later]));
+  const c = await one(`select launch_date::text l, original_launch_date::text o, delay_days from clients where id = $1`, [clientA]);
+  assert.equal(c.l, later);
+  assert.equal(c.o, before.o, 'original launch date kept');
+  assert.equal(c.delay_days, 3);
+  const open = await q(`select due_date::text d from tasks where client_stage_id = $1 and status <> 'done' and not is_recurring`, [st8.id]);
+  assert.ok(open.length > 0 && open.every((t) => t.d === later), 'open tasks follow the new deadline');
+  await rejects(as(U.copy, () => q(`select set_stage_dates($1, $2::date, $3::date)`, [st8.id, st8.d, later])), /manager or an admin/);
 });
 
 await test('SQL Editor bundle is up to date with the migrations', async () => {

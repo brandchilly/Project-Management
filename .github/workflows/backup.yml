@@ -1,0 +1,53 @@
+# Weekly database backup (the free plan has none). Monday 2:00 AM IST.
+# The dump is ENCRYPTED before upload: this repository is public, and anyone can download
+# a public repository's workflow artifacts. Without the passphrase the file is useless.
+#
+# Repository secrets (Settings > Secrets and variables > Actions > Secrets):
+#   SUPABASE_DB_URL     Session pooler connection string (Supabase > Connect > Session pooler),
+#                       with your database password filled in. Never paste it anywhere else.
+#   BACKUP_PASSPHRASE   A long passphrase you keep safe (e.g. in a password manager).
+# Restore steps: docs/BACKUP.md. Files in Storage are not part of this backup.
+name: Weekly database backup
+
+on:
+  schedule:
+    - cron: '30 20 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump and encrypt
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL:-}" ] || [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+            echo "::error::Add the SUPABASE_DB_URL and BACKUP_PASSPHRASE repository secrets."
+            exit 1
+          fi
+          mkdir backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/data.sql --use-copy --data-only
+          stamp=$(date -u +%Y-%m-%d)
+          tar -czf - backup | gpg --batch --yes --pinentry-mode loopback --symmetric --cipher-algo AES256 \
+            --passphrase-file <(printf '%s' "$BACKUP_PASSPHRASE") -o "pms-backup-$stamp.tar.gz.gpg"
+          rm -rf backup
+          echo "STAMP=$stamp" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pms-backup-${{ env.STAMP }}
+          path: pms-backup-*.tar.gz.gpg
+          retention-days: 90
+          if-no-files-found: error

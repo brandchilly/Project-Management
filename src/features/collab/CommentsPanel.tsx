@@ -12,11 +12,10 @@ import { formatDateTime } from '@/lib/dates';
 import { cn } from '@/lib/cn';
 import { useProfiles } from '@/features/admin/api';
 import type { Tables } from '@/types/database';
+import { SECRET_HINT, highlightMentions } from './mentions';
 
 type Comment = Tables<'comments'> & { author: Pick<Tables<'profiles'>, 'id' | 'full_name' | 'email'> | null };
 
-// Rough check for credentials typed into chat; the vault is the right place for them.
-const SECRET_HINT = /\b(password|passwd|pwd|otp|pin)\b\s*[:=-]?\s*\S+/i;
 
 interface CommentsPanelProps {
   // Task comments when taskId is set; otherwise the client's thread.
@@ -211,18 +210,5 @@ export function CommentsPanel({ taskId, clientId, emptyText = 'No comments yet.'
         </p>
       )}
     </div>
-  );
-}
-
-function highlightMentions(text: string) {
-  const parts = text.split(/(@[A-Za-z][\w.'-]*(?: [A-Z][\w.'-]*)?)/g);
-  return parts.map((part, i) =>
-    part.startsWith('@') ? (
-      <span key={i} className="font-medium text-gold-300">
-        {part}
-      </span>
-    ) : (
-      part
-    )
   );
 }

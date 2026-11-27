@@ -1,0 +1,29 @@
+# Keeps the free Supabase project from pausing after 7 quiet days (holidays, long weekends).
+# Every 3 days it makes one read-only call to keep_alive() with the public key.
+# Uses the same repository secrets as the deploy: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+# Note: GitHub turns scheduled workflows off after 60 days without commits; re-enable it
+# under Actions if that happens.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: '17 3 */3 * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call keep_alive()
+        env:
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+          KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::error::Add the VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY repository secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error -X POST "$URL/rest/v1/rpc/keep_alive" \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}'

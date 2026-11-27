@@ -29,3 +29,6 @@ dev-dist
 .megamemory
 supabase/.temp
 assets/brand/chilli-mark-preview.png
+
+# Client import scripts contain client data; keep them out of the public repo.
+supabase/setup/import_clients_*.sql

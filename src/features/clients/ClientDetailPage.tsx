@@ -41,6 +41,8 @@ import { CustomTaskDialog } from '@/features/tasks/CustomTaskDialog';
 import { cellState, TONE_CLASS } from '@/features/board/cell';
 import { EditClientDialog } from './EditClientDialog';
 import { VaultPanel } from './VaultPanel';
+import { ClientTeam, DepartmentBoard } from './ClientWorkspace';
+import { StageDatesDialog, type StageForDates } from './StageDatesDialog';
 import type { Tables } from '@/types/database';
 
 export type ClientDetail = Tables<'clients'> & {
@@ -93,7 +95,9 @@ export function ClientDetailPage() {
   const { openTask } = useTaskDrawer();
   const { client, cells, tasks } = useClientDetail(id);
   const [editing, setEditing] = useState(false);
-  const [addTaskStage, setAddTaskStage] = useState<string | null | undefined>(undefined);
+  // Open add-task form with optional stage/department presets; null = closed.
+  const [addTask, setAddTask] = useState<{ stageId?: string; departmentId?: string } | null>(null);
+  const [editDates, setEditDates] = useState<StageForDates | null>(null);
 
   const c = client.data;
   const isStaff = profile?.role === 'admin' || profile?.role === 'manager';
@@ -178,7 +182,7 @@ export function ClientDetailPage() {
         </div>
         {canManage && (
           <div className="flex shrink-0 gap-2">
-            <Button variant="secondary" onClick={() => setAddTaskStage(null)}>
+            <Button variant="secondary" onClick={() => setAddTask({})}>
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">Add task</span>
             </Button>
@@ -263,6 +267,8 @@ export function ClientDetailPage() {
         <div className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
           <TabsList>
             <TabsTrigger value="stages">Stages & tasks</TabsTrigger>
+            <TabsTrigger value="departments">By department</TabsTrigger>
+            <TabsTrigger value="team">Team</TabsTrigger>
             <TabsTrigger value="thread">Thread</TabsTrigger>
             <TabsTrigger value="files">Files</TabsTrigger>
             {canManage && <TabsTrigger value="vault">Vault</TabsTrigger>}
@@ -293,7 +299,26 @@ export function ClientDetailPage() {
                       <div className="flex items-center gap-2">
                         <span className={cn('rounded-full border px-2.5 py-0.5 text-xs font-medium', TONE_CLASS[st.tone])}>{st.label}</span>
                         {canManage && (
-                          <Button variant="ghost" size="icon-sm" aria-label={`Add task to ${cell.name}`} onClick={() => setAddTaskStage(cell.stage_id)}>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Edit dates of ${cell.name}`}
+                            onClick={() =>
+                              setEditDates({
+                                id: cell.stage_id!,
+                                clientId: c.id,
+                                name: cell.is_post_launch ? 'Post-launch' : cell.name ?? '',
+                                startDate: cell.start_date,
+                                dueDate: cell.due_date,
+                                isLaunch: !cell.is_post_launch && cell.position === Math.max(...launchStages.map((x) => x.position ?? 0)),
+                              })
+                            }
+                          >
+                            <CalendarDays className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canManage && (
+                          <Button variant="ghost" size="icon-sm" aria-label={`Add task to ${cell.name}`} onClick={() => setAddTask({ stageId: cell.stage_id ?? undefined })}>
                             <Plus className="h-4 w-4" />
                           </Button>
                         )}
@@ -323,6 +348,27 @@ export function ClientDetailPage() {
                 </Card>
               )}
             </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="departments">
+          {tasks.isLoading ? (
+            <div className="skeleton h-40 w-full rounded-2xl" />
+          ) : (
+            <DepartmentBoard
+              tasks={tasks.data ?? []}
+              canManage={canManage}
+              onAssign={(departmentId) => setAddTask({ departmentId })}
+              onOpen={openTask}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="team">
+          {tasks.isLoading ? (
+            <div className="skeleton h-40 w-full rounded-2xl" />
+          ) : (
+            <ClientTeam tasks={tasks.data ?? []} managerId={c.manager_id} onOpen={openTask} />
           )}
         </TabsContent>
 
@@ -358,9 +404,10 @@ export function ClientDetailPage() {
       {canManage && (
         <>
           <EditClientDialog client={c} open={editing} onOpenChange={setEditing} />
+          <StageDatesDialog stage={editDates} onOpenChange={(o) => !o && setEditDates(null)} />
           <CustomTaskDialog
-            open={addTaskStage !== undefined}
-            onOpenChange={(o) => !o && setAddTaskStage(undefined)}
+            open={!!addTask}
+            onOpenChange={(o) => !o && setAddTask(null)}
             clientId={c.id}
             clientName={c.name}
             stages={(cells.data ?? []).map((s) => ({
@@ -369,7 +416,8 @@ export function ClientDetailPage() {
               position: s.position ?? 0,
               is_post_launch: !!s.is_post_launch,
             }))}
-            defaultStageId={addTaskStage ?? undefined}
+            defaultStageId={addTask?.stageId}
+            defaultDepartmentId={addTask?.departmentId}
           />
         </>
       )}
@@ -401,6 +449,7 @@ const FIELD_LABEL: Record<string, string> = {
   lifecycle: 'status',
   manager_id: 'manager',
   launch_date: 'launch date',
+  priority: 'priority',
 };
 
 function ActivityPanel({ clientId, tasks }: { clientId: string; tasks: Task[] }) {

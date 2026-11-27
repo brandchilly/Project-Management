@@ -86,6 +86,28 @@ export function useMyTasks() {
   });
 }
 
+// My tasks completed in the last 30 days (the Completed filter).
+export function useMyCompletedTasks(enabled = true) {
+  const { profile } = useAuth();
+  return useQuery({
+    queryKey: [...queryKeys.myTasks, 'completed', profile?.id],
+    enabled: !!profile && enabled,
+    queryFn: async () => {
+      const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const { data, error } = await supabase
+        .from('tasks')
+        .select(TASK_SELECT)
+        .eq('assignee_id', profile!.id)
+        .eq('status', 'done')
+        .gte('completed_at', since)
+        .order('completed_at', { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data as unknown as Task[];
+    },
+  });
+}
+
 // Tasks waiting for my approval: client I manage, member who reports to me, or (admin) all.
 export function useReviewQueue() {
   const { profile } = useAuth();

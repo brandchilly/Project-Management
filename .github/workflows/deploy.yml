@@ -1,9 +1,13 @@
 # Builds the app and deploys it to GitHub Pages on every push to main.
-# Repository settings needed (see README):
-#   Settings > Pages > Source: "GitHub Actions", Custom domain: pm.brandchilly.com, Enforce HTTPS
+# Repository settings needed:
+#   Settings > Pages > Source: "GitHub Actions"
+#   Enforce HTTPS when available
+# Custom domain will be configured separately after
+# the default GitHub Pages deployment is working.
 #   Settings > Secrets and variables > Actions:
 #     secrets   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
-#     variable  VITE_BASE (optional) - "/PMS/" while serving from <user>.github.io/PMS/
+#   variable  VITE_BASE - "/Project-Management/" for GitHub Pages
+#   Use "/" when deploying through the custom domain pm.brandchilly.com
 name: Deploy to GitHub Pages
 
 on:
@@ -26,6 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -44,7 +51,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_BASE: ${{ vars.VITE_BASE || '/' }}
+          VITE_BASE: ${{ vars.VITE_BASE || '/Project-Management/' }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

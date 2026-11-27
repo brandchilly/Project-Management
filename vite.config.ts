@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
 
-// "/" for the custom domain (pm.brandchilly.com). Set VITE_BASE=/PMS/ to serve from
-// <user>.github.io/PMS/ before the domain is connected.
+// GitHub Pages repository URL:
+// Set VITE_BASE=/Project-Management/ for
+// https://brandchilly.github.io/Project-Management/
+//
+// Custom domain (pm.brandchilly.com):
+// Set VITE_BASE=/ when the custom domain is connected.
 const base = process.env.VITE_BASE || '/';
 
 // https://vitejs.dev/config/

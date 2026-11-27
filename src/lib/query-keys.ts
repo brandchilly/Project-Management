@@ -18,4 +18,6 @@ export const queryKeys = {
   holidays: ['holidays'] as const,
   appSettings: ['app-settings'] as const,
   credentials: (clientId: string) => ['credentials', clientId] as const,
+  chat: ['chat'] as const,
+  chatMessages: (conversationId: string) => ['chat', 'messages', conversationId] as const,
 };

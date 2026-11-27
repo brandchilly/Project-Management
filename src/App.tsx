@@ -32,6 +32,7 @@ const ClientDetailPage = named(() => import('@/features/clients/ClientDetailPage
 const MyTeamPage = named(() => import('@/features/team/MyTeamPage'), 'MyTeamPage');
 const NotificationsPage = named(() => import('@/features/notifications/NotificationsPage'), 'NotificationsPage');
 const ReportsPage = named(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
+const ChatPage = named(() => import('@/features/chat/ChatPage'), 'ChatPage');
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,6 +110,9 @@ function AppRoutes() {
           <Route path="/clients/new" element={managers(<Screen><NewClientPage /></Screen>)} />
           <Route path="/clients/:id" element={<Screen><ClientDetailPage /></Screen>} />
           <Route path="/tasks/:id" element={<Screen><TaskPage /></Screen>} />
+          <Route path="/chat" element={<Screen><ChatPage /></Screen>} />
+          <Route path="/chat/client/:clientId" element={<Screen><ChatPage /></Screen>} />
+          <Route path="/chat/:id" element={<Screen><ChatPage /></Screen>} />
           <Route path="/notifications" element={<Screen><NotificationsPage /></Screen>} />
           <Route path="/account" element={<Screen><AccountPage /></Screen>} />
           <Route path="/reports" element={managers(<Screen><ReportsPage /></Screen>)} />

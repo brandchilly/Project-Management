@@ -18,6 +18,7 @@ Issues already known from the audit are listed in [AUDIT_2026-11-26.md](AUDIT_20
 | Add Client | `#/clients/new` | ✓ | ✓ | – |
 | Client page | `#/clients/:id` | ✓ (+ vault) | ✓ (vault only for their own clients) | read-only, no vault |
 | Task (also opens as a side drawer) | `#/tasks/:id` | ✓ | ✓ | tasks on their clients |
+| Chat | `#/chat`, `#/chat/:id`, `#/chat/client/:id` | ✓ (not DMs or groups they aren't in) | ✓ | ✓ (client threads only for their own clients) |
 | Alerts | `#/notifications` | ✓ | ✓ | ✓ |
 | Account ("Me" on phones) | `#/account` | ✓ | ✓ | ✓ |
 | Reports | `#/reports` | ✓ | ✓ | – |
@@ -136,3 +137,63 @@ The 8 departments are pre-loaded: Account Manager, Strategist, Copywriter, Desig
 ### 17. Phone check
 - [ ] Use Chrome DevTools device mode. Or run `npm run dev -- --host` and open the "Network" address it prints on a phone on the same Wi-Fi.
 - [ ] Bottom tab bar, large buttons, drawers slide up from the bottom, no sideways scrolling except the Board table.
+
+---
+
+## Workspace, task UI, team UI and chat (branch feature/workspace-chat)
+
+First run the database update in the Supabase SQL Editor; see [PLAN_2026-11-26_WORKSPACE_CHAT.md](PLAN_2026-11-26_WORKSPACE_CHAT.md). Then run `npm run dev`.
+
+### W1. Assign task with a client (Admin, or the client's Manager)
+- [ ] My Tasks → **New task** and My Team → **Assign task** both open a form with a **Client** picker. It lists only clients you manage; an Admin sees every open client.
+- [ ] Choose a client and the **Stage** list fills with its stages. Choose "No client" and it becomes a team task, with Department required.
+- [ ] Choose a Department: the assignee becomes its default person, and the list shows only that department's members. **Show everyone** widens it.
+- [ ] Set **Priority** to Urgent and save. The task appears on the client page and in the assignee's My Tasks with an **Urgent** flag, without a refresh.
+- [ ] As a Member, open your own task: you can't change its priority (the database refuses it).
+
+### W2. My Tasks: `#/my-tasks`
+- [ ] Six tiles: Overdue, Due today, Pending, In progress, In review, Completed (30 days). Clicking a tile filters the list; clicking it again clears the filter.
+- [ ] Tabs: All open, Pending, In progress, In review, Waiting on client, Overdue and Completed, each with a count.
+- [ ] Search matches title, description and client. The client filter includes **Team tasks**. Sorting works by Due date, Priority and Newest first.
+- [ ] Each card shows the client, stage, priority, title, a 2-line description, status, deadline and assigned date. The coloured left edge is red when overdue.
+- [ ] A **To Do** card has **Start**, which moves it to In progress.
+- [ ] Loading no longer flashes "All clear" before the tasks appear (audit item A-03).
+
+### W3. My Team: `#/team` (Admin or Manager)
+- [ ] Summary tiles, search, a department filter and three sorts: Needs attention, Most open, Name.
+- [ ] Each card shows the person's departments and job roles, their open, today, in-review and done counts, and a progress bar of recent work. Overdue shows in red.
+- [ ] **View tasks** opens a profile sheet with contact details, departments, job roles, and Open and Completed tabs. **Assign** opens the task form with that person preset.
+- [ ] **Message** opens a direct chat with that person.
+- [ ] Open team tasks are grouped by department, in cards.
+
+### W4. Clients: `#/clients`
+- [ ] Tiles: All, Onboarding, Active, Launched and Delayed. Clicking one filters the list.
+- [ ] Each card shows the current stage (e.g. "Stage 3 of 8 · Script"), progress, open, overdue and in-review counts, the team's avatars and the manager.
+- [ ] **Assign task** appears only on clients you can manage.
+- [ ] A newly added client's card appears straight away.
+- [ ] As a Member, you see only clients where you have a task, with no Assign button.
+
+### W5. Client workspace: `#/clients/:id`
+- [ ] **By department** tab: one card per department, with its default person, counts and tasks. Done tasks are collapsed. **Assign** presets that department and its default person.
+- [ ] **Team** tab: the client manager comes first, then everyone with tasks here, with progress and counts. **Tasks** expands each person's list, and the chat icon messages them.
+- [ ] As a Member, both tabs are visible and read-only.
+
+### W6. Chat: `#/chat`
+- [ ] **New → Direct message** with a person. Starting it again from either side reopens the same conversation.
+- [ ] **New → New group** with a name and people. Settings (the gear icon) let the creator or an Admin rename the group and add or remove people. Anyone can **Leave**.
+- [ ] **Teams** lists one channel per department. Its members, managers and admins can post; other members don't see it.
+- [ ] **Clients** opens each client's thread, the same one shown on the client page.
+- [ ] A message sent in one window appears in the other within a second or two. The **Chat** badge in the sidebar and phone nav counts unread messages, and opening the conversation clears it.
+- [ ] Enter sends and Shift+Enter starts a new line. **@name** suggests only people in that conversation, and the mentioned person gets an Alert that opens the chat.
+- [ ] You can delete your own messages (hover a message; on phones the bin is always faintly visible). Typing "password: …" shows the Vault warning.
+- [ ] On a phone, the list and the conversation take turns, with a back arrow.
+- [ ] An Admin can't see direct messages or groups they aren't part of.
+
+### W7. Chat v2
+- [ ] Scroll up in a long conversation: older messages load 50 at a time, and the view doesn't jump.
+- [ ] Use the paperclip to attach a photo and a PDF. The photo is compressed and shown inline; the PDF opens on click. A file over 10 MB is refused.
+- [ ] A green dot shows who is online. While someone types in the other window, "Rahul is typing…" appears.
+- [ ] Use the reply icon on a message: a thread opens beside it and the parent shows "1 reply". On phones the thread fills the screen.
+- [ ] React with the smiley icon; click the reaction again to remove it.
+- [ ] Type 3+ letters in the Chat search: **Messages found** lists matching messages from your conversations only.
+- [ ] Admin › Settings › **Usage and storage** shows database and file meters and how long data is kept (Keep chat: 6 months). **Remove** cleans up unused chat files.

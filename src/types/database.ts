@@ -55,6 +55,233 @@ export type Database = {
         };
         Relationships: [];
       };
+      chat_conversations: {
+        Row: {
+          id: string;
+          kind: string;
+          title: string | null;
+          department_id: string | null;
+          direct_key: string | null;
+          created_by: string | null;
+          created_at: string;
+          last_message_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          kind: string;
+          title?: string | null;
+          department_id?: string | null;
+          direct_key?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          last_message_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          kind?: string;
+          title?: string | null;
+          department_id?: string | null;
+          direct_key?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          last_message_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'chat_conversations_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_conversations_department_id_fkey';
+            columns: ['department_id'];
+            isOneToOne: false;
+            referencedRelation: 'departments';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          author_id: string;
+          body: string;
+          mentions: string[];
+          created_at: string;
+          edited_at: string | null;
+          parent_id: string | null;
+          attachments: Json;
+          reply_count: number;
+          last_reply_at: string | null;
+          search: unknown | null;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          author_id?: string;
+          body: string;
+          mentions?: string[];
+          created_at?: string;
+          edited_at?: string | null;
+          parent_id?: string | null;
+          attachments?: Json;
+          reply_count?: number;
+          last_reply_at?: string | null;
+          search?: unknown | null;
+        };
+        Update: {
+          id?: string;
+          conversation_id?: string;
+          author_id?: string;
+          body?: string;
+          mentions?: string[];
+          created_at?: string;
+          edited_at?: string | null;
+          parent_id?: string | null;
+          attachments?: Json;
+          reply_count?: number;
+          last_reply_at?: string | null;
+          search?: unknown | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'chat_messages_author_id_fkey';
+            columns: ['author_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_messages_conversation_id_fkey';
+            columns: ['conversation_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_messages_parent_id_fkey';
+            columns: ['parent_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_messages';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      chat_participants: {
+        Row: {
+          conversation_id: string;
+          user_id: string;
+          added_at: string;
+        };
+        Insert: {
+          conversation_id: string;
+          user_id: string;
+          added_at?: string;
+        };
+        Update: {
+          conversation_id?: string;
+          user_id?: string;
+          added_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'chat_participants_conversation_id_fkey';
+            columns: ['conversation_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_participants_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      chat_reactions: {
+        Row: {
+          message_id: string;
+          user_id: string;
+          emoji: string;
+          conversation_id: string;
+          created_at: string;
+        };
+        Insert: {
+          message_id: string;
+          user_id?: string;
+          emoji: string;
+          conversation_id: string;
+          created_at?: string;
+        };
+        Update: {
+          message_id?: string;
+          user_id?: string;
+          emoji?: string;
+          conversation_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'chat_reactions_conversation_id_fkey';
+            columns: ['conversation_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_reactions_message_id_fkey';
+            columns: ['message_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_messages';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_reactions_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      chat_reads: {
+        Row: {
+          conversation_id: string;
+          user_id: string;
+          last_read_at: string;
+        };
+        Insert: {
+          conversation_id: string;
+          user_id: string;
+          last_read_at?: string;
+        };
+        Update: {
+          conversation_id?: string;
+          user_id?: string;
+          last_read_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'chat_reads_conversation_id_fkey';
+            columns: ['conversation_id'];
+            isOneToOne: false;
+            referencedRelation: 'chat_conversations';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'chat_reads_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       client_credentials: {
         Row: {
           id: string;
@@ -724,6 +951,7 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          priority: Database['public']['Enums']['task_priority'];
         };
         Insert: {
           id?: string;
@@ -759,6 +987,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          priority?: Database['public']['Enums']['task_priority'];
         };
         Update: {
           id?: string;
@@ -794,6 +1023,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          priority?: Database['public']['Enums']['task_priority'];
         };
         Relationships: [
           {
@@ -1015,12 +1245,36 @@ export type Database = {
         };
         Returns: string;
       };
+      admin_usage: {
+        Args: never;
+        Returns: Json;
+      };
       approve_task: {
         Args: {
           p_task_id: string;
           p_note?: string;
         };
         Returns: Database['public']['Tables']['tasks']['Row'];
+      };
+      chat_files_to_purge: {
+        Args: never;
+        Returns: { name: string; bytes: number }[];
+      };
+      chat_inbox: {
+        Args: never;
+        Returns: {
+          id: string;
+          kind: string;
+          title: string;
+          department_id: string;
+          other_user_id: string;
+          created_by: string;
+          member_count: number;
+          last_message_at: string;
+          last_body: string;
+          last_author_id: string;
+          unread: number;
+        }[];
       };
       create_client_from_template: {
         Args: {
@@ -1050,8 +1304,16 @@ export type Database = {
           p_client_dependent?: boolean;
           p_blocks_stage?: boolean;
           p_checklist?: string[];
+          p_priority?: Database['public']['Enums']['task_priority'];
         };
         Returns: Database['public']['Tables']['tasks']['Row'];
+      };
+      create_group_chat: {
+        Args: {
+          p_title: string;
+          p_user_ids: string[];
+        };
+        Returns: string;
       };
       delete_client_credential: {
         Args: {
@@ -1090,6 +1352,22 @@ export type Database = {
       ist_today: {
         Args: never;
         Returns: string;
+      };
+      keep_alive: {
+        Args: never;
+        Returns: string;
+      };
+      leave_chat: {
+        Args: {
+          p_conversation_id: string;
+        };
+        Returns: undefined;
+      };
+      mark_chat_read: {
+        Args: {
+          p_conversation_id: string;
+        };
+        Returns: undefined;
       };
       mark_notifications_read: {
         Args: {
@@ -1140,6 +1418,15 @@ export type Database = {
         };
         Returns: string;
       };
+      set_stage_dates: {
+        Args: {
+          p_stage_id: string;
+          p_start_date: string;
+          p_due_date: string;
+          p_move_tasks?: boolean;
+        };
+        Returns: Database['public']['Tables']['client_stages']['Row'];
+      };
       set_task_status: {
         Args: {
           p_task_id: string;
@@ -1148,6 +1435,21 @@ export type Database = {
           p_submission_url?: string;
         };
         Returns: Database['public']['Tables']['tasks']['Row'];
+      };
+      start_direct_chat: {
+        Args: {
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      update_group_chat: {
+        Args: {
+          p_conversation_id: string;
+          p_title?: string;
+          p_add?: string[];
+          p_remove?: string[];
+        };
+        Returns: undefined;
       };
       update_my_profile: {
         Args: {
@@ -1170,6 +1472,7 @@ export type Database = {
       client_lifecycle: 'onboarding' | 'active' | 'launched' | 'paused' | 'completed';
       recurrence_kind: 'weekly' | 'monthly';
       stage_status: 'todo' | 'in_progress' | 'done';
+      task_priority: 'low' | 'normal' | 'high' | 'urgent';
       task_status: 'todo' | 'in_progress' | 'in_review' | 'done' | 'waiting_on_client';
       user_role: 'admin' | 'manager' | 'member';
     };

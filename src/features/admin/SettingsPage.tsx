@@ -15,6 +15,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { formatDate, istToday } from '@/lib/dates';
 import type { Json } from '@/types/database';
 import { AdminTabs } from './AdminTabs';
+import { UsageCard } from './UsageCard';
 import { useAppSettings, useHolidays } from './api';
 
 export function SettingsPage() {
@@ -150,6 +151,8 @@ export function SettingsPage() {
         </Card>
 
         <div className="space-y-5">
+          <UsageCard />
+
           <Card>
             <CardHeader>
               <CardTitle>Default people</CardTitle>

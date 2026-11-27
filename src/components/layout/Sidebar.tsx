@@ -11,10 +11,11 @@ interface SidebarProps {
   role: UserRole | null;
   userName: string;
   unreadCount?: number;
+  chatUnread?: number;
   onSignOut: () => void;
 }
 
-export function Sidebar({ role, userName, unreadCount = 0, onSignOut }: SidebarProps) {
+export function Sidebar({ role, userName, unreadCount = 0, chatUnread = 0, onSignOut }: SidebarProps) {
   const location = useLocation();
   const items = navItemsForRole(role);
 
@@ -29,6 +30,7 @@ export function Sidebar({ role, userName, unreadCount = 0, onSignOut }: SidebarP
           const isActive =
             location.pathname === item.to ||
             (item.to !== '/my-tasks' && location.pathname.startsWith(item.match ?? item.to));
+          const badge = item.to === '/notifications' ? unreadCount : item.to === '/chat' ? chatUnread : 0;
           return (
             <NavLink
               key={item.to}
@@ -36,7 +38,7 @@ export function Sidebar({ role, userName, unreadCount = 0, onSignOut }: SidebarP
               className={({ isActive: linkActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200',
-                  (linkActive || isActive)
+                  linkActive || isActive
                     ? 'bg-crimson-600/10 text-crimson-400 shadow-[inset_0_0_0_1px_rgba(217,4,41,0.2)]'
                     : 'text-graphite-300 hover:bg-graphite-800 hover:text-white'
                 )
@@ -44,9 +46,12 @@ export function Sidebar({ role, userName, unreadCount = 0, onSignOut }: SidebarP
             >
               <item.icon className="h-[18px] w-[18px] shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {item.to === '/notifications' && unreadCount > 0 && (
-                <span className="rounded-full bg-crimson-600 px-1.5 text-[11px] font-bold leading-5 text-white" aria-label={`${unreadCount} unread`}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
+              {badge > 0 && (
+                <span
+                  className="rounded-full bg-crimson-600 px-1.5 text-[11px] font-bold leading-5 text-white"
+                  aria-label={`${badge} unread`}
+                >
+                  {badge > 99 ? '99+' : badge}
                 </span>
               )}
             </NavLink>

@@ -44,7 +44,8 @@ create table storage.buckets (
   id text primary key, name text not null, public boolean default false, file_size_limit bigint
 );
 create table storage.objects (
-  id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid
+  id uuid primary key default gen_random_uuid(), bucket_id text, name text, owner uuid,
+  metadata jsonb, created_at timestamptz default now()
 );
 alter table storage.objects enable row level security;
 grant usage on schema storage to authenticated;
@@ -54,3 +55,13 @@ create schema extensions;
 create schema net;
 create function net.http_post(url text, headers jsonb, body jsonb, timeout_milliseconds int)
 returns bigint language sql as $$ select 1::bigint $$;
+
+-- Realtime authorization (private channels): policies live on realtime.messages.
+create schema realtime;
+create table realtime.messages (
+  id bigserial primary key, topic text, extension text, payload jsonb, inserted_at timestamptz default now()
+);
+alter table realtime.messages enable row level security;
+create function realtime.topic() returns text language sql stable as $$ select current_setting('realtime.topic', true) $$;
+grant usage on schema realtime to authenticated;
+

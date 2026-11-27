@@ -6,9 +6,10 @@ import type { UserRole } from '@/lib/constants';
 interface BottomNavProps {
   role: UserRole | null;
   unreadCount?: number;
+  chatUnread?: number;
 }
 
-export function BottomNav({ role, unreadCount = 0 }: BottomNavProps) {
+export function BottomNav({ role, unreadCount = 0, chatUnread = 0 }: BottomNavProps) {
   const location = useLocation();
   if (!role) return null;
   const items = MOBILE_NAV_ITEMS.filter((item) => item.roles.includes(role));
@@ -20,11 +21,12 @@ export function BottomNav({ role, unreadCount = 0 }: BottomNavProps) {
           const isActive =
             location.pathname === item.to ||
             (item.to !== '/my-tasks' && location.pathname.startsWith(item.match ?? item.to));
+          const badge = item.label === 'Alerts' ? unreadCount : item.label === 'Chat' ? chatUnread : 0;
           return (
             <NavLink
               key={item.to}
               to={item.to}
-              className="flex flex-col items-center justify-center gap-1 px-3 py-1.5 min-h-[44px] min-w-[44px] rounded-lg transition-colors"
+              className="flex flex-col items-center justify-center gap-1 px-1.5 py-1.5 min-h-[44px] min-w-[44px] rounded-lg transition-colors"
             >
               <div className="relative">
                 <item.icon
@@ -34,9 +36,9 @@ export function BottomNav({ role, unreadCount = 0 }: BottomNavProps) {
                   )}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
-                {item.label === 'Alerts' && unreadCount > 0 && (
+                {badge > 0 && (
                   <span className="absolute -top-1.5 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-crimson-600 px-1 text-[10px] font-bold text-white">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                    {badge > 9 ? '9+' : badge}
                   </span>
                 )}
               </div>
